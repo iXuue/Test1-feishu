@@ -1,7 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { parseProjectEnvText, updateProjectEnvText } from "../electron/projectEnv";
+import {
+  apiKeyFromProjectEnv,
+  parseProjectEnvText,
+  providerSettingsFromProjectEnv,
+  updateProjectEnvText,
+} from "../electron/projectEnv";
+import type { ProviderSettings } from "../electron/ipcTypes";
+
+const fallbackProvider: ProviderSettings = {
+  provider: "deepseek",
+  model: "deepseek-v4-flash",
+  baseUrl: "https://api.deepseek.com",
+  host: "http://127.0.0.1:11434",
+  credential: { configured: true, source: "global-file", displayHint: "saved" },
+};
 
 describe("legacy project env helpers", () => {
+  it("resolves the project .env as the active OpenAI-compatible provider", () => {
+    const values = {
+      CODECUB_PROVIDER: "openai",
+      OPENAI_API_BASE: "https://llm.example.aliyuncs.com/compatible-mode/v1",
+      OPENAI_API_KEY: "aliyun-test-key",
+      OPENAI_MODEL: "qwen3.7-flash",
+    };
+
+    const settings = providerSettingsFromProjectEnv(values, fallbackProvider);
+
+    expect(settings).toMatchObject({
+      provider: "openai",
+      model: "qwen3.7-flash",
+      baseUrl: "https://llm.example.aliyuncs.com/compatible-mode/v1",
+      credential: { configured: true, source: "project-env", displayHint: "OPENAI_API_KEY" },
+    });
+    expect(apiKeyFromProjectEnv(values, settings.provider)).toBe("aliyun-test-key");
+  });
+
   it("parses quoted values without exposing project env as active model settings", () => {
     const original = [
       "# existing config",

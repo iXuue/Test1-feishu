@@ -9,6 +9,7 @@ import { readGitStatus } from "./gitStatus.js";
 import { installProjectExtension, listProjectExtensions } from "./projectExtensions.js";
 import { createProjectSession, deleteProjectSession, listProjectSessions, loadProjectSession } from "./projectSessions.js";
 import { loadRecentProjects, rememberProject } from "./projectStore.js";
+import { loadProjectEnvProviderSettings, readProjectEnvApiKey } from "./projectEnv.js";
 import { sendToRenderer } from "./safeIpc.js";
 import { TerminalManager } from "./terminal.js";
 import type {
@@ -104,9 +105,16 @@ ipcMain.handle(
     resumeSessionId = "",
   ) => {
     const settings = await loadSettings();
-    const effectiveSettings = { ...settings, approvalPolicy, executionMode };
+    const projectProvider = await loadProjectEnvProviderSettings(projectPath, settings.provider);
+    const effectiveSettings = {
+      ...settings,
+      approvalPolicy,
+      executionMode,
+      provider: projectProvider,
+    };
     const credentialId = effectiveSettings.provider.credentialId || effectiveSettings.provider.provider;
-    const apiKey = await readApiKey(credentialId, effectiveSettings.provider.provider);
+    const projectApiKey = await readProjectEnvApiKey(projectPath, effectiveSettings.provider.provider);
+    const apiKey = projectApiKey || (await readApiKey(credentialId, effectiveSettings.provider.provider));
     backend.start(buildBackendLaunchConfig(projectPath, effectiveSettings, apiKey, process.env, resumeSessionId));
     await rememberProject(projectPath);
   },
