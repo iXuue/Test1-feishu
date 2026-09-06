@@ -1,32 +1,3 @@
-from .cli import build_agent, build_arg_parser, build_welcome, main
-from .models import AnthropicCompatibleModelClient, FakeModelClient, OllamaModelClient, OpenAICompatibleModelClient
-from .provider_config import ProviderConfig
-from .provider_contract import (
-    ErrorClassification,
-    ErrorKind,
-    ProviderCapabilities,
-    ProviderSpec,
-    classify_model_error,
-)
-from .provider_health import ProviderHealth, check_provider
-from .provider_registry import PROVIDER_REGISTRY, ProviderRegistry
-from .extensions import (
-    ExtensionConflict,
-    ExtensionContext,
-    ExtensionError,
-    ExtensionManifest,
-    ExtensionRegistry,
-)
-from .sandbox import SandboxDescriptor, WorkspaceBoundarySandbox
-from .security import (
-    TrustBoundary,
-    URLSecurityError,
-    URLTarget,
-    mark_untrusted_text,
-    new_trust_boundary,
-    validate_url,
-)
-from .context_validator import ContextValidationEvidence, ContextValidationResult, ContextValidator
 from .auth import (
     AuthError,
     AuthMiddleware,
@@ -38,8 +9,39 @@ from .auth import (
     SignedAuthToken,
     StaticTokenAuthProvider,
 )
-from .gateway import GatewayRpcError, GatewayServer, MAX_RPC_FRAME_BYTES
+from .automation import AutomationScheduler, CronJob, CronScheduleError, CronStore, cron_next
+from .channels import (
+    ChannelAdapter,
+    ChannelError,
+    ChannelRegistry,
+    InboundMessage,
+    LoopbackChannel,
+    OutboundMessage,
+)
+from .context_validator import ContextValidationEvidence, ContextValidationResult, ContextValidator
+from .extensions import (
+    ExtensionConflict,
+    ExtensionContext,
+    ExtensionError,
+    ExtensionManifest,
+    ExtensionRegistry,
+)
+from .gateway import MAX_RPC_FRAME_BYTES, GatewayRpcError, GatewayServer
 from .gateway_runtime import EmbeddedRuntimeGateway, RuntimeGatewayError
+from .instruction_loader import (
+    DEFAULT_INSTRUCTION_FILENAMES,
+    DEFAULT_MAX_INSTRUCTION_FILE_BYTES,
+    InstructionLoader,
+    InstructionLoadResult,
+)
+from .instructions import (
+    Instruction,
+    InstructionConflict,
+    InstructionLayer,
+    InstructionResolver,
+    InstructionScope,
+    ResolvedInstructions,
+)
 from .mcp import (
     MCP_MAX_FRAME_BYTES,
     McpClient,
@@ -51,31 +53,38 @@ from .mcp import (
     McpToolBridge,
     McpToolDefinition,
 )
-from .automation import AutomationScheduler, CronJob, CronScheduleError, CronStore, cron_next
-from .channels import (
-    ChannelAdapter,
-    ChannelError,
-    ChannelRegistry,
-    InboundMessage,
-    LoopbackChannel,
-    OutboundMessage,
+from .models import AnthropicCompatibleModelClient, FakeModelClient, OllamaModelClient, OpenAICompatibleModelClient
+from .provider_config import ProviderConfig
+from .provider_contract import (
+    ErrorClassification,
+    ErrorKind,
+    ProviderCapabilities,
+    ProviderSpec,
+    classify_model_error,
 )
-from .instruction_loader import (
-    DEFAULT_INSTRUCTION_FILENAMES,
-    DEFAULT_MAX_INSTRUCTION_FILE_BYTES,
-    InstructionLoadResult,
-    InstructionLoader,
-)
-from .instructions import (
-    Instruction,
-    InstructionConflict,
-    InstructionLayer,
-    InstructionResolver,
-    InstructionScope,
-    ResolvedInstructions,
-)
+from .provider_health import ProviderHealth, check_provider
+from .provider_registry import PROVIDER_REGISTRY, ProviderRegistry
 from .runtime import MiniAgent, Pico, SessionStore
+from .sandbox import SandboxDescriptor, WorkspaceBoundarySandbox
+from .security import (
+    TrustBoundary,
+    URLSecurityError,
+    URLTarget,
+    mark_untrusted_text,
+    new_trust_boundary,
+    validate_url,
+)
 from .workspace import WorkspaceContext
+
+
+def __getattr__(name):
+    """Lazily expose legacy CLI helpers without loading them for native entry points."""
+
+    if name in {"build_agent", "build_arg_parser", "build_welcome", "main"}:
+        from . import cli as legacy_cli
+
+        return getattr(legacy_cli, name)
+    raise AttributeError(name)
 
 __all__ = [
     "AnthropicCompatibleModelClient",

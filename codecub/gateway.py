@@ -10,10 +10,13 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .auth import Identity, StaticTokenAuthProvider
-from .gateway_runtime import EmbeddedRuntimeGateway, RuntimeGatewayError
+from .gateway_contract import RuntimeGatewayError
+
+if TYPE_CHECKING:
+    from .gateway_runtime import EmbeddedRuntimeGateway
 
 MAX_RPC_FRAME_BYTES = 1 << 20
 DEFAULT_OUTBOUND_QUEUE_SIZE = 128
@@ -131,7 +134,7 @@ class GatewayServer:
 
     def __init__(
         self,
-        runtime: EmbeddedRuntimeGateway,
+        runtime: "EmbeddedRuntimeGateway",
         *,
         host: str = "127.0.0.1",
         port: int = 0,
@@ -178,7 +181,8 @@ class GatewayServer:
     async def serve_forever(self) -> None:
         if self._server is None:
             await self.start()
-        assert self._server is not None
+        if self._server is None:  # pragma: no cover - defensive start boundary
+            raise RuntimeError("GatewayServer failed to start")
         async with self._server:
             await self._server.serve_forever()
 

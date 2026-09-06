@@ -18,6 +18,7 @@ SUPPORTED_EVENT_TYPES = {
     "run_status",
     "assistant_delta",
     "assistant_message",
+    "media",
     "run_completed",
     "run_failed",
     "run_canceled",

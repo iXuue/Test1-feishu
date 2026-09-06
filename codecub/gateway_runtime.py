@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from .automation import AutomationScheduler, CronStore
+from .gateway_contract import RuntimeGatewayError
 from .spine import (
     ApprovalBroker,
     BusyPolicy,
@@ -27,10 +28,6 @@ from .spine import (
     Spine,
     TurnRequest,
 )
-
-
-class RuntimeGatewayError(RuntimeError):
-    """A runtime command cannot be fulfilled by the embedded host."""
 
 
 class AgentFactory(Protocol):

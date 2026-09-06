@@ -378,6 +378,7 @@ class ExperimentRunner:
             ".git",
             ".next",
             ".pytest_cache",
+            ".pico",
             ".ruff_cache",
             ".tmp",
             ".uv-cache",

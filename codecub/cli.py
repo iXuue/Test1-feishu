@@ -17,16 +17,16 @@ from pathlib import Path
 
 from .app_runner import run_app_mode
 from .connections import resolve_effective_connection_profile
+from .extensions import ExtensionRegistry
+from .model_gateway import ModelGateway
 from .models import (
     AnthropicCompatibleModelClient,
     OllamaModelClient,
     OpenAICompatibleModelClient,
 )
-from .model_gateway import ModelGateway
 from .provider_config import ProviderConfig
 from .provider_health import check_provider
 from .provider_registry import PROVIDER_REGISTRY
-from .extensions import ExtensionRegistry
 from .runtime import EXECUTION_MODE_MULTI_AGENT, EXECUTION_MODE_SINGLE, Pico, SessionStore
 from .spine import LegacyTurnRunner, Origin, Source, Spine, TurnRequest
 from .workspace import WorkspaceContext, middle
@@ -713,6 +713,14 @@ def build_arg_parser():
 
 
 def main(argv=None):
+    # 保留公开发行版既有的 entry-point 字符串，避免破坏安装后的脚本身份；
+    # 真正的控制台启动统一转发到 Pico 原生 composition root。显式传入 argv
+    # 的调用继续保留 legacy API，供旧的库调用方和迁移期测试使用，但不再是
+    # 已安装 ``codecub`` 命令的生产运行路径。
+    if argv is None and Path(sys.argv[0]).stem.lower() in {"codecub", "codecub.exe"}:
+        from .native_cli import main as native_main
+
+        return native_main()
     args = build_arg_parser().parse_args(argv)
     if getattr(args, "probe", False) and not getattr(args, "doctor", False):
         raise SystemExit("--probe requires --doctor")

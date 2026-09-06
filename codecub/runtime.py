@@ -919,9 +919,9 @@ class Pico:
         self.max_new_tokens = max_new_tokens
         self.context_window = context_window
         self.safety_margin_tokens = int(safety_margin_tokens)
-        self.token_counter = getattr(
-            model_client, "token_counter", None
-        ) or resolve_token_counter(getattr(model_client, "model", ""))
+        self.token_counter = getattr(model_client, "token_counter", None)
+        if self.token_counter is None and not getattr(model_client, "disable_auto_token_counter", False):
+            self.token_counter = resolve_token_counter(getattr(model_client, "model", ""))
         self.depth = depth
         self.max_depth = max_depth
         self.read_only = read_only

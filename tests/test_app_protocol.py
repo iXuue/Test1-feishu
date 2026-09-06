@@ -45,6 +45,16 @@ def test_make_event_accepts_approval_diff_and_import_event_types():
     assert imported["type"] == "legacy_import_completed"
 
 
+def test_make_event_accepts_native_media_event():
+    media = make_event(
+        "media",
+        session_id="session-1",
+        payload={"items": [{"path": "out.png", "mime": "image/png", "kind": "image"}]},
+    )
+    assert media["type"] == "media"
+    assert media["payload"]["items"][0]["mime"] == "image/png"
+
+
 def test_make_event_accepts_run_status():
     event = make_event(
         "run_status",
@@ -122,14 +132,10 @@ def test_parse_send_message_command():
 
 
 def test_parse_send_message_accepts_only_documented_busy_policies():
-    command = parse_command_line(
-        '{"type":"send_message","message":"constraint","busy_policy":"inject"}'
-    )
+    command = parse_command_line('{"type":"send_message","message":"constraint","busy_policy":"inject"}')
     assert command["busy_policy"] == "INJECT"
     with pytest.raises(ValueError, match="busy_policy"):
-        parse_command_line(
-            '{"type":"send_message","message":"constraint","busy_policy":"CANCEL"}'
-        )
+        parse_command_line('{"type":"send_message","message":"constraint","busy_policy":"CANCEL"}')
 
 
 def test_parse_approval_commands_require_approval_id():

@@ -57,6 +57,10 @@ def _extract_chat_tool_calls(data):
 
 
 class FakeModelClient:
+    # Fake clients intentionally keep CodeCub's historical character-budget
+    # semantics; Pico's native runtime owns token counting separately.
+    disable_auto_token_counter = True
+
     def __init__(self, outputs):
         self.outputs = list(outputs)
         self.prompts = []

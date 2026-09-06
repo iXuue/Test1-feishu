@@ -8,7 +8,9 @@ __pycache__/
 .venv/
 venv/
 .uv-cache/
-uv.lock
+
+# JavaScript dependencies
+node_modules/
 
 # Packaging
 *.egg-info/
@@ -61,8 +63,18 @@ tmp/
 artifacts/
 readme_intro_locked/
 
-# Local docs not intended for publication
-docs/
+# Upstream public documentation and absorption records are tracked; unrelated
+# CodeCub working documents remain ignored by the existing repository policy.
+docs/*
+!docs/evaluation/
+!docs/evaluation/**
+!docs/examples/
+!docs/examples/**
+!docs/onboarding/
+!docs/onboarding/**
+!docs/PICO_HARNESS_FULL_ABSORPTION_PLAN.md
+!docs/upstream/
+!docs/upstream/**
 
 # OS files
 .DS_Store

@@ -1,0 +1,1 @@
+{"accepted_records": 0, "error_type": null, "ledgers": {"3b1b7389f1554b31be0a0c2c08401da7": {"accepted_records": 0, "error_type": null, "lost_records": 0, "persisted_records": 0, "status": "healthy"}}, "lost_records": 0, "persisted_records": 0, "schema": "pico.call-efficiency.ledger-health.v1", "status": "healthy"}
