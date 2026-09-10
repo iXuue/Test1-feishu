@@ -166,6 +166,29 @@ class FeishuChannel(ChannelBase):
                 return True
         return False
 
+    @staticmethod
+    def _strip_bot_mentions(message: Any, text: str) -> str:
+        """Remove the structured mention token for the addressed bot.
+
+        Feishu's event body keeps the mention in the text as a placeholder such
+        as ``@_user_1`` while also exposing the structured ``mentions`` list.
+        The placeholder is routing metadata, not user task content, so it must
+        not be sent to the Agent. Mentions of other users remain untouched.
+        """
+        cleaned = text or ""
+        if "@_all" in cleaned:
+            cleaned = cleaned.replace("@_all", "")
+        for mention in getattr(message, "mentions", None) or []:
+            mid = getattr(mention, "id", None)
+            if not mid or getattr(mid, "user_id", None) or not (getattr(mid, "open_id", None) or "").startswith("ou_"):
+                continue
+            key = getattr(mention, "key", None)
+            name = getattr(mention, "name", None)
+            for token in (f"@{key}" if key else None, f"@{name}" if name else None, key, name):
+                if token:
+                    cleaned = cleaned.replace(token, "")
+        return " ".join(cleaned.split()).strip()
+
     def _addressed_to_bot(self, message: Any) -> bool:
         return self.config.group_policy == "open" or self._is_bot_mentioned(message)
 
@@ -488,10 +511,14 @@ class FeishuChannel(ChannelBase):
             message = data.event.message
             sender = data.event.sender
             message_id = message.message_id
-            if message_id in self._seen:
+            header = getattr(data, "header", None)
+            event_id = getattr(header, "event_id", None) or getattr(data, "event_id", None)
+            dedup_ids = tuple(value for value in (message_id, event_id) if value)
+            if any(value in self._seen for value in dedup_ids):
                 logger.info("Feishu duplicate event suppressed: message_id={}", message_id)
                 return
-            self._seen[message_id] = None
+            for dedup_id in dedup_ids:
+                self._seen[dedup_id] = None
             while len(self._seen) > _DEDUP_CAP:
                 self._seen.popitem(last=False)
             if sender.sender_type == "bot":
@@ -509,6 +536,7 @@ class FeishuChannel(ChannelBase):
             await self._react(message_id, self.config.react_emoji)
 
             content_text, media_paths = await self._extract(msg_type, message, message_id)
+            content_text = self._strip_bot_mentions(message, content_text)
             if not content_text and not media_paths:
                 return
 
@@ -524,7 +552,13 @@ class FeishuChannel(ChannelBase):
                 chat_id=reply_to,
                 content=content_text,
                 media=media_paths,
-                metadata={"message_id": message_id, "chat_type": chat_type, "msg_type": msg_type},
+                metadata={
+                    "event_id": event_id,
+                    "message_id": message_id,
+                    "chat_type": chat_type,
+                    "msg_type": msg_type,
+                    "message_type": msg_type,
+                },
             )
         except Exception as e:
             logger.error("Error processing Feishu message: {}", e)

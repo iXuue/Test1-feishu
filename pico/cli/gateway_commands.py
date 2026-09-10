@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -103,6 +104,7 @@ async def _cleanup_gateway(
     *,
     run_error: BaseException | None,
     health_server: Any | None,
+    feishu_bridge: Any | None = None,
     cron: Any,
     question_broker: Any | None,
     channels: Any,
@@ -131,6 +133,8 @@ async def _cleanup_gateway(
 
     if health_server is not None:
         await attempt("health server", health_server.close)
+    if feishu_bridge is not None:
+        await attempt("external Feishu webhook", feishu_bridge.close)
     await attempt("cron", cron.stop)
     if question_broker is not None:
         await attempt("question broker", question_broker.cancel_all)
@@ -237,12 +241,40 @@ def register(app: typer.Typer) -> None:
         agent = runtime.agent_loop
         session_manager = runtime.session_manager
 
+        from pico.channels.adapters.feishu.webhook import (
+            FeishuWebhookBridge,
+            FeishuWebhookChannel,
+            FeishuWebhookSettings,
+        )
+        from pico.channels.outlet import ChannelOutletAdapter
+        from pico.maintainer.agent_runner import AgentLoopCoder
+        from pico.maintainer.workflow import MaintainerWorkflow
+
+        maintainer_workflow = MaintainerWorkflow(
+            coder=AgentLoopCoder(config, ec_config, provider=provider, router=router),
+        )
+
+        try:
+            external_feishu_settings = FeishuWebhookSettings.from_env()
+        except ValueError as exc:
+            external_feishu_settings = None
+            console.print(f"[red]✗[/red] External Feishu webhook disabled: {exc}")
+        external_feishu = (
+            FeishuWebhookChannel(external_feishu_settings) if external_feishu_settings is not None else None
+        )
+
         from pico.cli._cron_handler import make_on_cron_job
 
         if channels.enabled_channels:
             console.print(f"[green]✓[/green] Channels enabled: {', '.join(channels.enabled_channels)}")
         else:
             console.print("[yellow]Warning: No channels enabled[/yellow]")
+        if external_feishu is not None:
+            console.print(
+                "[green]✓[/green] External Feishu webhook: "
+                f"http://{external_feishu.settings.host}:{external_feishu.settings.port}"
+                f"{external_feishu.settings.path}"
+            )
 
         cron_status = cron.status()
         if cron_status["jobs"] > 0:
@@ -250,6 +282,7 @@ def register(app: typer.Typer) -> None:
 
         async def run():
             health_server = None
+            feishu_bridge = None
             gw_teardown = None
             question_broker = None
             run_error: BaseException | None = None
@@ -266,7 +299,10 @@ def register(app: typer.Typer) -> None:
                     user_pool=config.gateway.user_pool,
                     system_pool=config.gateway.system_pool,
                     send_max_retries=config.gateway.send_max_retries,
+                    maintainer_handler=maintainer_workflow.handle,
                 )
+                if external_feishu is not None:
+                    gw_hub.register(ChannelOutletAdapter(external_feishu))
                 cron.on_job = make_on_cron_job(
                     gw_hub,
                     submit=gw_scheduler.submit,
@@ -315,7 +351,59 @@ def register(app: typer.Typer) -> None:
                 from pico.spine.turn import BusyPolicy
 
                 async def _inbound_dispatch(req) -> None:
-                    cmd = req.text.strip().lower()
+                    raw_text = req.text.strip()
+                    command_parts = raw_text.split(maxsplit=1)
+                    command = command_parts[0].lower() if command_parts else ""
+                    if req.source.channel == "feishu" and command == "ping" and len(command_parts) == 1:
+                        await gw_hub.dispatch(
+                            Text(
+                                content="pong",
+                                source=req.source,
+                                reply_to=req.message_id,
+                            )
+                        )
+                        return
+                    if command in {"/issue", "/fix-e2e"}:
+                        legacy_e2e = command == "/fix-e2e"
+                        if legacy_e2e and os.environ.get("E2E_TEST_MODE", "").lower() != "true":
+                            await gw_hub.dispatch(
+                                Text(
+                                    content="FEISHU_TO_GITHUB_E2E_NOT_ACCEPTED\nblocked=E2E_TEST_MODE_REQUIRED",
+                                    source=req.source,
+                                    reply_to=req.message_id,
+                                )
+                            )
+                            return
+                        description = command_parts[1].strip() if len(command_parts) > 1 else ""
+                        if not description:
+                            await gw_hub.dispatch(
+                                Text(
+                                    content=(
+                                        "FEISHU_TO_GITHUB_E2E_NOT_ACCEPTED\nblocked=EMPTY_FIX_DESCRIPTION"
+                                        if legacy_e2e
+                                        else "GITHUB_ISSUE_NOT_ACCEPTED\nblocked=EMPTY_ISSUE_DESCRIPTION"
+                                    ),
+                                    source=req.source,
+                                    reply_to=req.message_id,
+                                )
+                            )
+                            return
+                        extras = dict(req.source.extras)
+                        extras.update(
+                            {
+                                "maintainer_command": "fix-e2e" if legacy_e2e else "issue",
+                                "maintainer_description": description,
+                            }
+                        )
+                        maintainer_req = replace(
+                            req,
+                            text=description,
+                            source=replace(req.source, extras=extras),
+                        )
+                        gw_scheduler.submit(maintainer_req)
+                        return
+
+                    cmd = raw_text.lower()
                     cid = req.conversation or f"{req.source.channel}:{req.source.chat_id}"
                     if cmd == "/stop":
                         stopped = gw_scheduler.cancel_conversation(cid)
@@ -346,6 +434,9 @@ def register(app: typer.Typer) -> None:
 
                 for _ch in channels.channels.values():
                     _ch.intake.set_submit(_inbound_dispatch)
+                if external_feishu is not None:
+                    external_feishu.intake.set_submit(_inbound_dispatch)
+                    feishu_bridge = FeishuWebhookBridge(external_feishu)
 
                 await cron.start()
                 try:
@@ -357,6 +448,17 @@ def register(app: typer.Typer) -> None:
                         port,
                         exc,
                     )
+                if feishu_bridge is not None:
+                    try:
+                        await feishu_bridge.start()
+                    except OSError as exc:
+                        logger.warning(
+                            "external Feishu webhook unavailable on {}:{} ({}); gateway continues without it",
+                            external_feishu.settings.host,
+                            external_feishu.settings.port,
+                            exc,
+                        )
+                        feishu_bridge = None
                 coros = [
                     agent.run(),
                     channels.start_all(),
@@ -371,6 +473,7 @@ def register(app: typer.Typer) -> None:
             await _cleanup_gateway(
                 run_error=run_error,
                 health_server=health_server,
+                feishu_bridge=feishu_bridge,
                 cron=cron,
                 question_broker=question_broker,
                 channels=channels,

@@ -17,8 +17,9 @@ from pico.agent.spine_runner import AgentTurnRunner
 from pico.channels.outlet import ChannelOutletAdapter
 from pico.spine import OriginPools, Scheduler
 from pico.spine.delivery import DeliveryHub
-from pico.spine.events import Text, TurnEnded, TurnFailed, TurnStarted
+from pico.spine.events import Text, TurnEnded, TurnFailed, TurnStarted, Usage
 from pico.spine.message import Source
+from pico.spine.runner import TurnOutcome
 from pico.spine.teardown import teardown_spine
 from pico.spine.turn import Origin
 
@@ -55,16 +56,25 @@ class GatewayTurnRunner(AgentTurnRunner):
         agent_loop: AgentLoop,
         readback_texts: dict[str, str],
         sources: dict[str, Source],
+        maintainer_handler: Callable[[TurnRequest], Awaitable[str]] | None = None,
     ) -> None:
         super().__init__(agent_loop, stream=False)
         self._readback_texts = readback_texts
         self._sources = sources
+        self._maintainer_handler = maintainer_handler
 
     async def run(self, req: TurnRequest, emit: Emit, drain: Drain) -> TurnOutcome:
         # 暂存本轮回复地址，使出口能把 TurnFailed 错误回复路由回原渠道（生命周期事件只携带
         # conversation_id）。以通道的会话 ID 为键；出口在 TurnEnded/TurnFailed 时弹出，
         # 避免守护进程不断积累。
         self._sources[_cid(req)] = req.source
+        if self._maintainer_handler is not None and req.source.extras.get("maintainer_command") == "fix-e2e":
+            body = await self._maintainer_handler(req)
+            await emit(Text(content=body, reply_to=req.message_id))
+            return TurnOutcome(
+                usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+                explicit_reply=True,
+            )
         if req.origin not in _READBACK_ORIGINS:
             return await self._loop.run_turn(req, emit, drain, stream=False)
         text_sink: dict[str, str] = {}
@@ -118,6 +128,7 @@ def build_gateway(
     user_pool: int = 4,
     system_pool: int = 2,
     send_max_retries: int = 3,
+    maintainer_handler: Callable[[TurnRequest], Awaitable[str]] | None = None,
 ) -> tuple[Scheduler, DeliveryHub, dict[str, str], dict[str, Source], Callable[[], Awaitable[None]]]:
     """Wire the gateway's spine pieces: a hub with a ChannelOutletAdapter per
     channel (so a reply reaches its target channel), and a Scheduler whose runner
@@ -143,7 +154,7 @@ def build_gateway(
     # 轮次工具状态（消息路由、上下文）现已局部化到每轮，user>1 因而安全：并发用户轮次
     # 不会再覆盖彼此的回复目标。system>1 则允许独立的 Cron 和子智能体轮次重叠。
     scheduler = Scheduler(
-        GatewayTurnRunner(agent_loop, readback_texts, sources),
+        GatewayTurnRunner(agent_loop, readback_texts, sources, maintainer_handler),
         OriginPools(user=user_pool, system=system_pool),
         _make_gateway_sink(hub, agent_loop, sources),
     )

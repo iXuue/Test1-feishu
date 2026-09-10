@@ -147,6 +147,7 @@ class Intake:
                     ),
                     text=content,
                     media=tuple(Media(path=p, mime="application/octet-stream", kind="file") for p in (media or [])),
+                    message_id=str(meta["message_id"]) if meta.get("message_id") else None,
                     # session_key_override -> conversation：run_turn 的 cid
                     # 使用 `conversation or channel:chat_id`。
                     conversation=session_key,
