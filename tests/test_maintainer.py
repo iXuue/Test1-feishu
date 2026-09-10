@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from pico.agent.tools.execution import ToolEffect
+from pico.cli._gateway_spine import GatewayTurnRunner
 from pico.maintainer.git import parse_github_repo, run_git
 from pico.maintainer.github import GitHubAdapter, GitHubCredentialRequiredError
 from pico.maintainer.models import PlatformIssueRef, PlatformPullRequestRef, PlatformRepoRef, WorkflowState
@@ -15,6 +16,48 @@ from pico.maintainer.state import MaintainerStateStore, idempotency_key, transit
 from pico.maintainer.workflow import MaintainerWorkflow
 from pico.spine.message import ChatType, Source
 from pico.spine.turn import Origin, TurnRequest
+
+
+@pytest.mark.asyncio
+async def test_issue_command_is_routed_to_maintainer_handler() -> None:
+    calls = []
+
+    class AgentMustNotRun:
+        async def run_turn(self, *_args, **_kwargs):
+            raise AssertionError("issue command must bypass the normal AgentLoop")
+
+    async def maintainer_handler(request):
+        calls.append(request)
+        return "GITHUB_ISSUE_FIXED"
+
+    runner = GatewayTurnRunner(
+        AgentMustNotRun(),
+        readback_texts={},
+        sources={},
+        maintainer_handler=maintainer_handler,
+    )
+    emitted = []
+    request = TurnRequest(
+        origin=Origin.USER,
+        source=Source(
+            channel="feishu",
+            chat_id="oc_test",
+            sender_id="ou_test",
+            chat_type=ChatType.GROUP,
+            extras={"maintainer_command": "issue"},
+        ),
+        text="README 增加一行 hello github",
+        message_id="msg-test",
+    )
+
+    async def emit(event):
+        emitted.append(event)
+
+    outcome = await runner.run(request, emit, lambda: [])
+
+    assert calls == [request]
+    assert emitted[0].content == "GITHUB_ISSUE_FIXED"
+    assert outcome.explicit_reply is True
 
 
 def test_idempotency_key_is_stable_and_changes_with_base_revision():

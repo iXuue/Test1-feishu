@@ -68,7 +68,7 @@ class GatewayTurnRunner(AgentTurnRunner):
         # conversation_id）。以通道的会话 ID 为键；出口在 TurnEnded/TurnFailed 时弹出，
         # 避免守护进程不断积累。
         self._sources[_cid(req)] = req.source
-        if self._maintainer_handler is not None and req.source.extras.get("maintainer_command") == "fix-e2e":
+        if self._maintainer_handler is not None and req.source.extras.get("maintainer_command") in {"fix-e2e", "issue"}:
             body = await self._maintainer_handler(req)
             await emit(Text(content=body, reply_to=req.message_id))
             return TurnOutcome(
