@@ -183,3 +183,5 @@ assets/       Static screenshots and desktop assets
 - Cross-process duplicate protection is not currently guaranteed.
 - Legacy recovered tool text without a stable operation identity has limited replay protection.
 - Generated runtime state under `.codecub/index/`, `.codecub/runs/`, `.codecub/sessions/`, `.codecub/cache/`, and `.codecub/usage/` should not be committed.
+
+Test FeiShu issue-4
